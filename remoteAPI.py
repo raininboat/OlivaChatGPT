@@ -200,7 +200,7 @@ class RemoteClient:
                 dict_fmt["reply_message"] = f"""\
 发送消息失败，错误码: 50000
 错误信息：\n
-{err}
+{err.__class__.__name__}: {err}
 """
                 reply.add_data(dict_fmt)
         else:
@@ -263,43 +263,51 @@ class RemoteClient:
         event_list = []
         time_start = time.time()
         if (response.status_code == 200):
+            err_time = 0
             while time.time() - time_start < STREAM_TIME_OUT:
                 tmp_data = b""
                 # flag_data_start = False
-                for chunk in response.iter_lines(chunk_size=1024):
-                    if chunk:
-                        log.trace(f"chunk: {chunk}")
-                        if chunk.startswith(b"data: "):
-                            # the chunk is the start of a new chunk
-                            chunk = chunk[6:]
-                            tmp_data = chunk
-                        else:
-                            # the chunk is part of the last chunk
-                            tmp_data += chunk
-                        try:
-                            event_this = json.loads(tmp_data)
-                            event_list.append(event_this)
-                            # tmp_data = tmp_data[end_index + 5:]
-                        except json.JSONDecodeError:
-                            if tmp_data == "[DONE]":
-                                # break
-                                log.trace("chunk [DONE]")
-                                return completion_text, event_list
-                            log.error(f"JSONDecodeError: {chunk}")
-                            # tmp_data = tmp_data[end_index + 5:]
-                        else:
-                            if len(event_this["choices"]) == 0 or "delta" not in event_this["choices"][0]:
-                                # log.debug("an empty chunk")
-                                continue
-                            if "content" in event_this["choices"][0]["delta"]:
-                                completion_text += event_this["choices"][0]["delta"]["content"]
-                            if event_this["choices"][0]["finish_reason"] is not None:
-                                if event_this["choices"][0]["finish_reason"] == "stop":
-                                    log.trace("stopped!")
+                try:
+                    for chunk in response.iter_lines(chunk_size=1024):
+                        if chunk:
+                            log.trace(f"chunk: {chunk}")
+                            if chunk.startswith(b"data: "):
+                                # the chunk is the start of a new chunk
+                                chunk = chunk[6:]
+                                tmp_data = chunk
+                            else:
+                                # the chunk is part of the last chunk
+                                tmp_data += chunk
+                            try:
+                                event_this = json.loads(tmp_data)
+                                event_list.append(event_this)
+                                # tmp_data = tmp_data[end_index + 5:]
+                            except json.JSONDecodeError:
+                                if tmp_data == "[DONE]":
+                                    # break
+                                    log.trace("chunk [DONE]")
                                     return completion_text, event_list
-                                else:
-                                    log.error(f"gpt returns with stop reason: {event_this['choices'][0]['finish_reason']}")
-                    time.sleep(0.001)
+                                log.error(f"JSONDecodeError: {chunk}")
+                                # tmp_data = tmp_data[end_index + 5:]
+                            else:
+                                if len(event_this["choices"]) == 0 or "delta" not in event_this["choices"][0]:
+                                    # log.debug("an empty chunk")
+                                    continue
+                                if "content" in event_this["choices"][0]["delta"]:
+                                    completion_text += event_this["choices"][0]["delta"]["content"]
+                                if event_this["choices"][0]["finish_reason"] is not None:
+                                    if event_this["choices"][0]["finish_reason"] == "stop":
+                                        log.trace("stopped!")
+                                        return completion_text, event_list
+                                    else:
+                                        log.error(f"gpt returns with stop reason: {event_this['choices'][0]['finish_reason']}")
+                except requests.exceptions.StreamConsumedError as err:
+                    log.error(f"StreamConsumedError: {err}")
+                    err_time += 1
+                    if err_time > 5:
+                        return completion_text, event_list
+                    time.sleep(1)
+                time.sleep(0.01)
             raise exceptions.OlivaChatGPTHTTPTimeoutError(completion_text)
         else:
             raise exceptions.OlivaChatGPTHTTPCodeError(response.status_code, response.content.decode(encoding="utf-8"))
