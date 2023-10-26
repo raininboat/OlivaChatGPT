@@ -123,7 +123,9 @@ class RemoteClient:
             log.debug(f"Sending message to {self.url}...")
             log.debug(f"Header: {self.header}")
             log.debug(f"Message: {self.body}")
-
+            timeout = None
+            if self.model_conf.timeout > 0:
+                timeout = self.model_conf.timeout
             if self.model_conf.stream:
 
                 log.debug("using stream mode")
@@ -134,6 +136,7 @@ class RemoteClient:
                     headers=self.header,
                     json=self.body,
                     stream=True,
+                    timeout=timeout,
                 )
                 token_send = get_token_from_message_list(self.body["messages"], self.model_conf.model_type)
                 data, response_data = self.__get_stream_response(response)
@@ -144,11 +147,13 @@ class RemoteClient:
                     dict_fmt["token_num"] = f"stream mode 下未安装 tiktoken 库或模型不支持，无法计算 token 数量"
             else:
                 self.body["stream"] = False
+
                 response = requests.request(
                     method="POST",
                     url=self.url,
                     headers=self.header,
                     json=self.body,
+                    timeout=timeout,
                     # verify=None,
                 )
                 data, response_data = self.__get_post_response(response)
@@ -283,7 +288,7 @@ class RemoteClient:
                                 event_list.append(event_this)
                                 # tmp_data = tmp_data[end_index + 5:]
                             except json.JSONDecodeError:
-                                if tmp_data == "[DONE]":
+                                if tmp_data == b"[DONE]":
                                     # break
                                     log.trace("chunk [DONE]")
                                     return completion_text, event_list
@@ -295,12 +300,21 @@ class RemoteClient:
                                     continue
                                 if "content" in event_this["choices"][0]["delta"]:
                                     completion_text += event_this["choices"][0]["delta"]["content"]
-                                if event_this["choices"][0]["finish_reason"] is not None:
+                                if "finish_reason" in event_this["choices"][0] and event_this["choices"][0]["finish_reason"] is not None:
                                     if event_this["choices"][0]["finish_reason"] == "stop":
                                         log.trace("stopped!")
                                         return completion_text, event_list
                                     else:
-                                        log.error(f"gpt returns with stop reason: {event_this['choices'][0]['finish_reason']}")
+                                        log.warn(f"gpt returns with stop reason: {event_this['choices'][0]['finish_reason']}")
+                                        return completion_text, event_list
+
+                except requests.exceptions.ReadTimeout as err:
+                    log.error(f"ReadTimeout: {err}")
+                    err_time += 1
+                    if err_time > 5:
+                        return completion_text, event_list
+                    time.sleep(1)
+
                 except requests.exceptions.StreamConsumedError as err:
                     log.error(f"StreamConsumedError: {err}")
                     err_time += 1
