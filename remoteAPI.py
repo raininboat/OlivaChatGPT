@@ -165,7 +165,7 @@ class RemoteClient:
         except exceptions.OlivaChatGPTHTTPCodeError as err:
             status_code = err.code + 51000
             self.database.save_error(
-                session_id=self.session_model.session_id, error_msg=str(err.content), status=status_code
+                session_id=self.session_model.session_id, error_msg=str(err.content), status=status_code-20100
             )
             if cmd is not None:
                 dict_fmt["reply_message"] = f"""\
@@ -176,7 +176,7 @@ class RemoteClient:
                 reply.add_data(dict_fmt)
         except exceptions.OlivaChatGPTHTTPResponseInvalidError as err:
             self.database.save_error(
-                session_id=self.session_model.session_id, error_msg=str(err.data), status=52200
+                session_id=self.session_model.session_id, error_msg=str(err.data), status=52200-20100
             )
             if cmd is not None:
                 dict_fmt["reply_message"] = f"""\
@@ -199,7 +199,7 @@ class RemoteClient:
             flag_success = True
         except Exception as err:
             self.database.save_error(
-                session_id=self.session_model.session_id, error_msg=str(err), status=50000
+                session_id=self.session_model.session_id, error_msg=str(err), status=50000-20100
             )
             if cmd is not None:
                 dict_fmt["reply_message"] = f"""\
@@ -218,7 +218,7 @@ class RemoteClient:
             flag_success = True
         finally:
             if flag_success == False:
-                self.database.recall_messages(self.session_model.session_id, -1, target_add=20100)
+                self.database.recall_messages(self.session_model.session_id, 2, target_add=20100)
                 self.body["messages"].pop(-1)
             
             event_this = after_receive_message_config(
@@ -234,6 +234,14 @@ class RemoteClient:
             if cmd is not None:
                 cmd.plugin_event.reply(reply.to_message())
             self.cache["cmd"] = None
+    
+    def recall(self, num: int, target_add: int = 20100, status_max: int = 20000):
+        """
+            recall the messages
+        """
+        self.database.recall_messages(self.session_model.session_id, num, target_add=target_add, status_max=status_max)
+        for _ in range(num):
+            self.body["messages"].pop(-1)
 
     def _record(self, role: "Literal['unknown', 'system', 'user', 'assistant']", content: str):
         """

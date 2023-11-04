@@ -274,6 +274,35 @@ def cmd_show(config: utils.CommandConfig):
     reply.add_data(fmt_base)
     config.plugin_event.reply(reply.to_message())
 
+
+def cmd_recall(config: utils.CommandConfig):
+    command_list = config.message.strip().split(" ")
+    # if "-a" in command_list or "--all" in command_list:
+    #     flag_all = True
+    data_api = databaseAPI.get_DataAPI()
+    session_model_this = data_api.get_user_session_this(
+        platform=config.user_info.platform,
+        user_id=config.user_info.user_id
+    )
+    if session_model_this is None:
+        reply = replyAPI.Reply.export.fail()
+        reply.add_data(config.dict_format)
+        reply.add_data({
+            "reason": "当前没有活动会话，请使用 .chat start <name> 或 .chat new -n <name> -m <model> 创建一个新的会话",
+            "session_name": "N/A",
+        })
+        config.plugin_event.reply(reply.to_message())
+        return
+    
+    client = remoteAPI.get_remote_client(session_model_this)
+    client.recall(2)
+    msg_list = client.body["messages"]
+    if len(msg_list) > 0:
+        config.plugin_event.reply("撤回成功，当前最后一条消息为："+str(msg_list[-1]))
+    else:
+        config.plugin_event.reply("撤回完毕，当前会话没有消息了。")
+
+
 def cmd_export(config: utils.CommandConfig):
     command_list = config.message.strip().split(" ")
     flag_all = False
