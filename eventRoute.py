@@ -131,7 +131,17 @@ def msg_run(plugin_event: OlivOS.API.Event, Proc: "OlivOS.pluginAPI.shallow"):
         )
 
 
-
+    elif message.startswith("recall"):
+        message = message[len("recall"):].lstrip()
+        commandAPI.cmd_recall(
+            utils.CommandConfig(
+                plugin_event=plugin_event,
+                Proc=Proc,
+                message=message,
+                user_info=utils.UserInfo.from_event(plugin_event),
+                data=databaseAPI.get_DataAPI()
+            )
+        )
     elif message.startswith("send"):
         message = message[len("send"):].lstrip()
         commandAPI.cmd_send(
